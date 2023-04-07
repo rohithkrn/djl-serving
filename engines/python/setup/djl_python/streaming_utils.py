@@ -1,7 +1,7 @@
 import torch
 import logging
-import json
 from transformers import (
+    TextIteratorStreamer,
     LogitsProcessorList,
     TemperatureLogitsWarper,
     TopKLogitsWarper,
@@ -9,6 +9,7 @@ from transformers import (
     TypicalLogitsWarper,
     RepetitionPenaltyLogitsProcessor,
 )
+from threading import Thread
 
 class StreamingUtils:
 
@@ -31,6 +32,34 @@ class StreamingUtils:
     @torch.inference_mode()
     def _hf_model_stream_generator(model, tokenizer, inputs, **kwargs):
         StreamingUtils._validate_inputs(inputs)
+        if len(inputs) == 1:
+            yield from StreamingUtils._hf_native_streamer(model, tokenizer, inputs, **kwargs)
+        else:
+            yield from StreamingUtils._hf_custom_streamer(model, tokenizer, inputs, **kwargs)
+    
+    @staticmethod
+    @torch.inference_mode()
+    def _hf_native_streamer(model, tokenizer, inputs, **kwargs):
+        tokenized_inputs = tokenizer(inputs, return_tensors="pt",
+                                     padding=True).to(
+                                         StreamingUtils._get_current_device())
+        if not tokenizer.pad_token:
+            tokenizer.pad_token = tokenizer.eos_token
+        streamer = TextIteratorStreamer(tokenizer)
+        max_new_tokens = kwargs.get("max_new_tokens",
+                                    StreamingUtils.DEFAULT_MAX_NEW_TOKENS)
+        generation_kwargs = dict(tokenized_inputs, streamer=streamer, max_new_tokens=max_new_tokens)
+        thread = Thread(target=model.generate, kwargs=generation_kwargs)
+        thread.start()
+        i=0
+        for token_text in streamer:
+            print(i)
+            i += 1
+            yield token_text
+
+    @staticmethod
+    @torch.inference_mode()
+    def _hf_custom_streamer(model, tokenizer, inputs, **kwargs):
         if not tokenizer.pad_token:
             tokenizer.pad_token = tokenizer.eos_token
         tokenized_inputs = tokenizer(inputs, return_tensors="pt",
