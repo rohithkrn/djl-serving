@@ -30,6 +30,7 @@ def create_trt_llm_repo(properties, args):
     kwargs = update_kwargs_with_env_vars(kwargs)
     kwargs['trt_llm_model_repo'] = args.trt_llm_model_repo
     kwargs["tensor_parallel_degree"] = args.tensor_parallel_degree
+    kwargs.setdefault("max_rolling_batch_size", 32)
     model_id_or_path = args.model_path or kwargs['model_id']
     create_model_repo(model_id_or_path, **kwargs)
 
